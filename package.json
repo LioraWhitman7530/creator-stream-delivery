@@ -1,0 +1,7 @@
+{
+  "name": "creator-stream-delivery",
+  "private": true,
+  "type": "module",
+  "scripts": {"start": "node --import tsx src/creator_stream.ts", "test": "node --import tsx test/creator_stream.test.ts"},
+  "dependencies": {"openai": "^4.0.0", "zod": "^3.0.0", "tsx": "^4.0.0"}
+}

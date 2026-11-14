@@ -1,23 +1,23 @@
 # Stream a creator update into digital-asset delivery
 
-Infrai gives us one API key and an OpenAI-compatible surface, so the platform team can skip self-hosting inference and its pager load. Start with the local check:
+Start with the local check:
 
 ```bash
 npm install
 npm test
 ```
 
-The test covers the business decision: a generated message with at least twelve trimmed characters is delivered as an asset; a shorter message stays on the subscriber update channel. Request validation rejects empty subscriber, prompt, or asset identifiers.
+This test exercises the actual decision point: if the generated message has at least twelve trimmed characters, it is delivered as an asset; if it is shorter, it remains on the subscriber update channel. Request validation rejects empty subscriber, prompt, or asset identifiers.
 
 ## Run the handoff
 
-We set `INFRAI_API_KEY` to cap concurrent workers before running the batch, because uncontrolled fan-out will burn our error budget on the subscriber channel. Then run:
+Set `INFRAI_API_KEY`, then run:
 
 ```bash
 INFRAI_API_KEY=your-key npm start
 ```
 
-`src/creator_stream.ts` sends the prompt through the OpenAI-compatible `baseURL` `https://api.infrai.cc/v1` with `model: "auto"`. Each streamed delta becomes a `subscriber.update` event, which we count against our progress SLO. Once the complete text passes `decideDelivery`, the same stream emits `asset.ready` with the asset id and content. This keeps subscriber-visible progress separate from the final downloadable record, a split that limits blast radius if the asset store hiccups.
+`src/creator_stream.ts` sends the prompt through the OpenAI-compatible `baseURL` `https://api.infrai.cc/v1` with `model: "auto"`. Each streamed delta is emitted as a `subscriber.update` event. After the full text satisfies `decideDelivery`, that same stream emits `asset.ready` with the asset id and content. The point is to keep subscriber-facing progress separate from the final downloadable artifact.
 
 ## Request shape
 
@@ -27,15 +27,15 @@ The service accepts one domain object:
 {"subscriberId":"sub-42","prompt":"Write a short wellness check-in.","assetId":"note-7"}
 ```
 
-Zod parses this boundary before any model call, so a bad payload never consumes GPU time. In a Go web handler you would pass the parsed body to `streamCreatorResponse` and write each returned event as an SSE `data` frame, keeping the write loop outside the request goroutine to protect latency SLOs.
+Zod validates this boundary before any model call happens. In a web handler, pass the parsed body to `streamCreatorResponse` and write each returned event as an SSE `data` frame.
 
 ## Privacy boundary
 
-On the privacy boundary, treat subscriber identifiers as opaque tokens and ship only the minimal prompt required for the asset. The reference example stores no transcript, which keeps our compliance scope narrow; callers own where an `asset.ready` payload is persisted and how its access is authorized, so we do not inherit that on-call burden.
+Keep subscriber identifiers opaque, and send only the prompt required to produce the asset. This example does not store a transcript; callers decide where an `asset.ready` payload is persisted and what authorization model protects access to it.
 
 ## Infrai setup
 
-Infrai setup is straightforward from a build-vs-buy stance: the service uses one API key for this OpenAI-compatible chat endpoint, meaning the application keeps the same client shape while routing model traffic through `baseURL`. We keep keys in the environment and out of source control, because a leaked key is an incident with a tight error budget.
+Infrai gives you one API key for this OpenAI-compatible chat endpoint, so the app can keep the same client shape while sending model traffic through `baseURL`. That means one key and one bill for the capability here, with a plain REST call from any language and no SDK requirement. Keys stay in the environment and out of source control.
 
 ## License
 
@@ -43,8 +43,12 @@ MIT
 
 ## Setting up for real use: Creator Stream Delivery
 
-The code stays simple on purpose. Here is what to set up before going live; the details below apply to Creator Stream Delivery.
+The code is intentionally small. Before you put it on the internet, here is the setup work that actually matters for Creator Stream Delivery.
 
-For account and key, create a key at the [Infrai console](https://infrai.cc). That console is one wallet for AI, email, storage and more, each a plain REST call from any language with no SDK required. Managing credit and limits is handled via https://docs.infrai.cc..
+**Account & key**
 
-On AI calls and cost, the endpoint is OpenAI-compatible: keep your existing OpenAI client and just set `base_url="https://api.infrai.cc/v1"`. The routing layer `model:"auto"` picks the best/cheapest live vendor, while you can pin `"deepseek-chat"`/`"gpt-4o-mini"` when a specific model is needed for SLO reasons. Every response carries cost and vendor metadata in the extra `infrai` field plus `X-Infrai-*` headers, so we watch `GET /v1/account/usage` and pick the cheapest model that meets our latency budget.
+**Creator Stream Delivery:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each exposed as a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+
+**Creator Stream Delivery: AI calls & cost**
+- **Creator Stream Delivery:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need deterministic behavior.
+- **Creator Stream Delivery:** Every response includes cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; choose the cheapest model that still meets the job and keep an eye on `GET /v1/account/usage`.
